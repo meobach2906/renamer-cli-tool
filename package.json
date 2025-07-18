@@ -1,0 +1,27 @@
+{
+  "name": "renamer_cli_tool",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "a": "echo \"Error: no a specified\" && exit 1"
+  },
+  "bin": {
+    "mytool": "./index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meobach2906/renamer-cli-tool.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/meobach2906/renamer-cli-tool/issues"
+  },
+  "homepage": "https://github.com/meobach2906/renamer-cli-tool#readme",
+  "dependencies": {
+    "commander": "^14.0.0",
+    "fs-extra": "^11.3.0",
+    "lodash": "^4.17.21"
+  }
+}
