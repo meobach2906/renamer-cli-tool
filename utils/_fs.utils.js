@@ -134,6 +134,8 @@ module.exports = (() => {
               } else {
                 await fse.unlink(write_path);
               }
+            } else {
+              await fse.unlink(entry.path);
             }
             if (verbose) {
               if (was_replace) {

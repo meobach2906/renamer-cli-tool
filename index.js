@@ -17,10 +17,15 @@ program
   .option('-i, --ignore <ignore>')
   .option('-v, --verbose')
   .action(async () => {
-    const { source, target, verbose = false, ignore = '' } = program.opts();
-    const list_ignore = ignore.split(',');
-
-    await _fs.rename({ directory: ROOT, source, target, verbose, list_ignore: [..._fs._CONST.LIST_IGNORE, ...list_ignore] })
+    try {
+      const { source, target, verbose = false, ignore = '' } = program.opts();
+      const list_ignore = ignore.split(',');
+  
+      await _fs.rename({ directory: ROOT, source, target, verbose, list_ignore: [..._fs._CONST.LIST_IGNORE, ...list_ignore] })
+    } catch (error) {
+      console.log(error);
+      process.exit(1);
+    }
   })
 
 program.parse()
