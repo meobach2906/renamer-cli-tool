@@ -1,6 +1,7 @@
 const path = require('path');
 const fse = require('fs-extra');
 const _to = require('./_to.utils');
+const pluralize = require('pluralize');
 
 module.exports = (() => {
   const _fs = {};
@@ -13,30 +14,41 @@ module.exports = (() => {
   ];
 
   _fs.read_dir = async ({ directory, list_ignore = _fs._CONST.LIST_IGNORE }) => {
+
     const result = {
       entries: []
     };
+
     const directory_tokens = directory.split('/');
+
     const folder = directory_tokens.pop();
     if (list_ignore.includes(folder)) {
       return result;
     }
+
+    const parent_directory = directory_tokens.join('/');
+
     result.entries.push({
       name: folder,
-      directory: directory_tokens.join('/'),
+      directory: parent_directory,
       path: directory,
       stats: {
         is_file: false,
         is_directory: true,
       },
     });
+
     const entries = await fse.readdir(directory);
+
     for (const entry_name of entries) {
       if (list_ignore.includes(entry_name)) {
         continue;
       }
+
       const entry_path = path.join(directory, entry_name);
+
       const stats = await fse.stat(entry_path);
+
       if (stats.isFile()) {
         result.entries.push({
           name: entry_name,
@@ -48,11 +60,14 @@ module.exports = (() => {
           },
         });
       }
+
       if (stats.isDirectory()) {
         const { entries } = await _fs.read_dir({ directory: entry_path });
+
         result.entries.push(...entries);
       }
     }
+
     return result;
   };
 
@@ -61,9 +76,19 @@ module.exports = (() => {
     const normalized_target = _to.normalize({ str: target });
 
     const renamer_mapping = {
+      [pluralize(source)]: [pluralize(target)],
+      [pluralize(source.toUpperCase())]: pluralize(target.toUpperCase()),
+      [pluralize(normalized_source)]: pluralize(normalized_target),
+      [pluralize(normalized_source.toUpperCase())]: pluralize(normalized_target.toUpperCase()),
+      [pluralize(_to.camel_case({ str: normalized_source }))]: pluralize( _to.camel_case({ str: normalized_target })),
+      [pluralize(_to.pascal_case({ str: normalized_source }))]: pluralize( _to.pascal_case({ str: normalized_target })),
+      [pluralize(_to.kebab_case({ str: normalized_source }))]: pluralize( _to.kebab_case({ str: normalized_target })),
+      [pluralize(_to.upper_kebab_case({ str: normalized_source }))]: pluralize( _to.upper_kebab_case({ str: normalized_target })),
+      [pluralize(_to.snake_case({ str: normalized_source }))]: pluralize( _to.snake_case({ str: normalized_target })),
+      [pluralize(_to.screaming_snake_case({ str: normalized_source }))]: pluralize( _to.screaming_snake_case({ str: normalized_target })),
       [source]: target,
       [source.toUpperCase()]: target.toUpperCase(),
-      [normalized_source]: [normalized_target],
+      [normalized_source]: normalized_target,
       [normalized_source.toUpperCase()]: normalized_target.toUpperCase(),
       [_to.camel_case({ str: normalized_source })]:  _to.camel_case({ str: normalized_target }),
       [_to.pascal_case({ str: normalized_source })]:  _to.pascal_case({ str: normalized_target }),
@@ -76,84 +101,44 @@ module.exports = (() => {
     const source_regex = new RegExp(`${Object.keys(renamer_mapping).join('|')}`, 'g')
 
     const { entries } = await _fs.read_dir({ directory, list_ignore });
+
     for (let index = entries.length - 1; index >= 0; index--) {
       const entry = entries[index];
       
       if (entry.stats.is_file) {
-        await new Promise((res, rej) => {
-          const read_stream = fse.createReadStream(entry.path, { encoding: 'utf8' });
 
-          let write_path = path.join(entry.directory, `temp-${entry.name}`);
+        let new_name = entry.name;
 
-          let was_rename = false;
+        if (source_regex.test(entry.name)) {
+          new_name = entry.name.replaceAll(source_regex, match => renamer_mapping[match]);
+        }
 
-          if (source_regex.test(entry.name)) {
-            let new_name = entry.name.replaceAll(source_regex, match => renamer_mapping[match]);
+        const new_path = path.join(entry.directory, new_name);
 
-            write_path = path.join(entry.directory, new_name);
+        const content = await fse.readFile(entry.path, { encoding: 'utf-8' });
 
-            was_rename = true;
-          }
+        if (source_regex.test(content)) {
+          const new_content = content.replaceAll(source_regex, match => renamer_mapping[match]);
 
-          const write_stream = fse.createWriteStream(write_path);
+          await fse.writeFile(new_path, new_content);
 
-          let previous_chunk = '';
-
-          let was_replace = false;
-
-          read_stream.on('data', (data) => {
-
-            let content = previous_chunk + data;
-
-            if (source_regex.test(content)) {
-
-              content = content.replaceAll(source_regex, match => renamer_mapping[match]);
-
-              write_stream.write(content);
-
-              was_replace = true;
-
-              previous_chunk = '';
-
-              return;
-            }
-
-            if (previous_chunk) {
-              write_stream.write(previous_chunk);
-            }
-
-            previous_chunk = data;
-
-          });
-
-          read_stream.on('end', async () => {
-            write_stream.end(previous_chunk);
-            if (!was_rename) {
-              if (was_replace) {
-                await fse.rename(write_path, entry.path);
-              } else {
-                await fse.unlink(write_path);
-              }
-            } else {
-              await fse.unlink(entry.path);
-            }
+          if (new_name != entry.name) {
+            await fse.unlink(entry.path);
             if (verbose) {
-              if (was_replace) {
-                console.log(`[REPLACE] [VARIABLE] [FILE: ${entry.path}]`);
-              }
-              if (was_rename) {
-                console.log(`[REPLACE] [RENAME] [FILE: ${entry.path}] [TO: ${write_path}]`);
-              }
+              console.log(`[REPLACE] [RENAME] [FILE: ${entry.path}] [TO: ${new_path}]`);
             }
-            read_stream.close();
-            res();
-          })
+          } else {
+            await fse.rename(entry.path, new_path);
+          }
+        } else if (new_name != entry.name) {
+          await fse.rename(entry.path, new_path);
+        }
 
-          read_stream.on('error', rej)
-          write_stream.on('error', rej)
-
-          read_stream.read();
-        })
+        if (verbose) {
+          if (new_name != entry.name) {
+            console.log(`[REPLACE] [RENAME] [FILE: ${entry.path}] [TO: ${new_path}]`);
+          }
+        }
       }
 
       if (entry.stats.is_directory) {
